@@ -1,4 +1,4 @@
-import { type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 export type ContentChannel = "Blog" | "Email" | "LinkedIn" | "Instagram" | "YouTube";
 export type ContentStatus = "Idea" | "Draft" | "Review" | "Scheduled" | "Published";
@@ -90,10 +90,14 @@ export function ContentCalendar({
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [creatingOn, setCreatingOn] = useState<string | null>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => setLocalItems(items), [items]);
   useEffect(() => {
-    if (editing || creatingOn) window.requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>("input")?.focus());
+    if (editing || creatingOn) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      window.requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>("input")?.focus());
+    }
   }, [editing, creatingOn]);
 
   const days = useMemo(() => calendarDays(month), [month]);
@@ -119,6 +123,32 @@ export function ContentCalendar({
     moveItem(event.dataTransfer.getData("text/content-id"), date);
   };
 
+  const closeDialog = () => {
+    setEditing(null);
+    setCreatingOn(null);
+    window.requestAnimationFrame(() => previousFocusRef.current?.focus());
+  };
+
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDialog();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button, input, select, [tabindex]:not([tabindex='-1'])") ?? []).filter((element) => !element.hasAttribute("disabled"));
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   const saveItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -141,8 +171,7 @@ export function ContentCalendar({
       setLocalItems((values) => [...values, next]);
       onItemCreate?.(next);
     }
-    setEditing(null);
-    setCreatingOn(null);
+    closeDialog();
   };
 
   if (isLoading) return <section className="min-h-[560px] rounded-2xl border border-[#282828] bg-[#0D0D0D] p-6" role="status" aria-live="polite"><div className="h-10 w-72 animate-pulse rounded bg-[#202020]" /><div className="mt-7 grid grid-cols-7 gap-1">{Array.from({ length: 35 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded bg-[#171717]" />)}</div><span className="sr-only">Loading content calendar</span></section>;
@@ -183,12 +212,12 @@ export function ContentCalendar({
       {localItems.length > 0 && filtered.length === 0 && hasActiveFilters && <div className="mt-5 rounded-2xl border border-dashed border-[#3A3A3A] p-8 text-center" role="status"><p className="font-semibold">No content matches these filters</p><button type="button" onClick={() => { setQuery(""); setChannel("all"); setAssignee("all"); setStatus("all"); }} className="mt-3 text-sm text-[#D4AF37]">Clear filters</button></div>}
     </div>
 
-    {(editing || creatingOn) && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) { setEditing(null); setCreatingOn(null); } }}><form ref={dialogRef} onSubmit={saveItem} role="dialog" aria-modal="true" aria-labelledby="content-dialog-title" className="w-full max-w-lg rounded-2xl border border-[#343434] bg-[#111] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-[#D4AF37]">Editorial item</p><h2 id="content-dialog-title" className="mt-1 text-xl font-bold">{editing ? "Edit content" : "Plan content"}</h2></div><button type="button" onClick={() => { setEditing(null); setCreatingOn(null); }} aria-label="Close dialog" className="rounded p-2 text-[#888] hover:bg-[#222] hover:text-white">✕</button></div><div className="mt-5 space-y-4">
+    {(editing || creatingOn) && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) closeDialog(); }}><form ref={dialogRef} onSubmit={saveItem} onKeyDown={handleDialogKeyDown} role="dialog" aria-modal="true" aria-labelledby="content-dialog-title" className="w-full max-w-lg rounded-2xl border border-[#343434] bg-[#111] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-[#D4AF37]">Editorial item</p><h2 id="content-dialog-title" className="mt-1 text-xl font-bold">{editing ? "Edit content" : "Plan content"}</h2></div><button type="button" onClick={closeDialog} aria-label="Close dialog" className="rounded p-2 text-[#888] hover:bg-[#222] hover:text-white">✕</button></div><div className="mt-5 space-y-4">
       <label className="block text-xs text-[#9CA3AF]">Title<input name="title" required defaultValue={editing?.title ?? ""} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white outline-none focus:border-[#D4AF37]" /></label>
       <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs text-[#9CA3AF]">Publish date<input name="date" type="date" required defaultValue={editing?.date ?? creatingOn ?? `${month}-01`} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white" /></label><label className="text-xs text-[#9CA3AF]">Channel<select name="channel" defaultValue={editing?.channel ?? "Blog"} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{channels.map((value) => <option key={value}>{value}</option>)}</select></label></div>
       <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs text-[#9CA3AF]">Owner<select name="assignee" defaultValue={editing?.assignee ?? team[0]} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{team.map((value) => <option key={value}>{value}</option>)}</select></label><label className="text-xs text-[#9CA3AF]">Status<select name="status" defaultValue={editing?.status ?? "Idea"} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{statuses.map((value) => <option key={value}>{value}</option>)}</select></label></div>
       <label className="block text-xs text-[#9CA3AF]">Campaign (optional)<input name="campaign" defaultValue={editing?.campaign ?? ""} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white" /></label>
-    </div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => { setEditing(null); setCreatingOn(null); }} className="rounded-lg border border-[#343434] px-4 py-2 text-sm hover:bg-[#222]">Cancel</button><button type="submit" className="rounded-lg bg-[#D4AF37] px-5 py-2 text-sm font-bold text-black hover:bg-[#E8C547]">Save item</button></div></form></div>}
+    </div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={closeDialog} className="rounded-lg border border-[#343434] px-4 py-2 text-sm hover:bg-[#222]">Cancel</button><button type="submit" className="rounded-lg bg-[#D4AF37] px-5 py-2 text-sm font-bold text-black hover:bg-[#E8C547]">Save item</button></div></form></div>}
   </section>;
 }
 
