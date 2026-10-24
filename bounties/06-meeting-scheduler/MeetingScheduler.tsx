@@ -58,6 +58,10 @@ function overlaps(slot: MeetingSlot, booking: MeetingBooking) {
   return booking.status === "confirmed" && slot.start < booking.end && slot.end > booking.start;
 }
 
+function sameBooking(left: MeetingBooking, right: MeetingBooking) {
+  return left.id === right.id && left.slotId === right.slotId && left.start === right.start && left.end === right.end && left.host === right.host && left.clientName === right.clientName && left.clientEmail === right.clientEmail && left.topic === right.topic && left.status === right.status;
+}
+
 export function MeetingScheduler({
   slots = sampleSlots,
   bookings = sampleBookings,
@@ -77,8 +81,16 @@ export function MeetingScheduler({
   const [operationError, setOperationError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const pendingChangesRef = useRef(new Map<string, MeetingBooking>());
 
-  useEffect(() => setLocalBookings(bookings), [bookings]);
+  useEffect(() => {
+    const incoming = new Map(bookings.map((booking) => [booking.id, booking]));
+    for (const [id, pending] of pendingChangesRef.current) {
+      const confirmed = incoming.get(id);
+      if (confirmed && sameBooking(confirmed, pending)) pendingChangesRef.current.delete(id);
+    }
+    setLocalBookings([...incoming.values()].map((booking) => pendingChangesRef.current.get(booking.id) ?? booking).concat([...pendingChangesRef.current.values()].filter((booking) => !incoming.has(booking.id))));
+  }, [bookings]);
   useEffect(() => {
     if (selectedSlot) {
       previousFocusRef.current = document.activeElement as HTMLElement;
@@ -134,9 +146,11 @@ export function MeetingScheduler({
     try {
       if (rescheduling) {
         await onReschedule?.(next);
+        pendingChangesRef.current.set(next.id, next);
         setLocalBookings((values) => values.map((booking) => booking.id === next.id ? next : booking));
       } else {
         await onCreate?.(next);
+        pendingChangesRef.current.set(next.id, next);
         setLocalBookings((values) => [...values, next]);
       }
       closeDialog();
@@ -152,6 +166,7 @@ export function MeetingScheduler({
     setOperationError(null);
     try {
       await onCancel?.(next);
+      pendingChangesRef.current.set(next.id, next);
       setLocalBookings((values) => values.map((value) => value.id === booking.id ? next : value));
     } catch {
       setOperationError("The meeting could not be cancelled. Please try again.");
@@ -163,7 +178,7 @@ export function MeetingScheduler({
 
   return <section className="min-h-screen bg-[#090909] px-4 py-8 text-[#F5F5F5] sm:px-6 lg:px-8">
     <div className="mx-auto max-w-6xl">
-      <header className="flex flex-col gap-5 border-b border-[#292929] pb-7 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-xs uppercase tracking-[.24em] text-[#D4AF37]">Client meetings</p><h1 className="mt-2 text-3xl font-bold sm:text-4xl">Find a time that works</h1><p className="mt-2 max-w-xl text-sm leading-6 text-[#9CA3AF]">Choose a live opening, confirm your details, and receive a calendar-ready booking.</p></div><label className="text-xs text-[#9CA3AF]">Your timezone<select value={timeZone} onChange={(event) => { setTimeZone(event.target.value); setSelectedDate(""); }} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#111] px-3 text-sm text-white sm:w-56">{timeZones.map((value) => <option key={value}>{value.replaceAll("_", " ")}</option>)}</select></label></header>
+      <header className="flex flex-col gap-5 border-b border-[#292929] pb-7 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-xs uppercase tracking-[.24em] text-[#D4AF37]">Client meetings</p><h1 className="mt-2 text-3xl font-bold sm:text-4xl">Find a time that works</h1><p className="mt-2 max-w-xl text-sm leading-6 text-[#9CA3AF]">Choose a live opening, confirm your details, and receive a calendar-ready booking.</p></div><label className="text-xs text-[#9CA3AF]">Your timezone<select value={timeZone} onChange={(event) => { setTimeZone(event.target.value); setSelectedDate(""); }} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#111] px-3 text-sm text-white sm:w-56">{timeZones.map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select></label></header>
       {operationError && <div className="mt-5 flex items-center justify-between rounded-xl border border-red-900/70 bg-red-950/20 px-4 py-3 text-sm text-red-200" role="alert"><span>{operationError}</span><button type="button" onClick={() => setOperationError(null)} aria-label="Dismiss error">✕</button></div>}
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_340px]">
         <main className="rounded-2xl border border-[#292929] bg-[#0D0D0D] p-5 sm:p-6"><div className="flex items-center justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-[#D4AF37]">October 2026</p><h2 className="mt-1 text-xl font-bold">Available times</h2></div><span className="rounded-full bg-[#1B1B1B] px-3 py-1 font-mono text-xs text-[#9CA3AF]">{available.length} open</span></div>
