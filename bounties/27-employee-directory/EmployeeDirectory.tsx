@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export interface EmployeeProfile {
   id: string;
@@ -90,7 +90,8 @@ export function EmployeeDirectory({ employees = DEFAULT_EMPLOYEES, loading = fal
   const [department, setDepartment] = useState("All departments");
   const [location, setLocation] = useState("All locations");
   const [view, setView] = useState<"directory" | "org">("directory");
-  const [selected, setSelected] = useState<EmployeeProfile | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const departments = useMemo(() => ["All departments", ...Array.from(new Set(employees.map((employee) => employee.department)))], [employees]);
   const locations = useMemo(() => ["All locations", ...Array.from(new Set(employees.map((employee) => employee.location)))], [employees]);
@@ -103,9 +104,47 @@ export function EmployeeDirectory({ employees = DEFAULT_EMPLOYEES, loading = fal
         (location === "All locations" || employee.location === location);
     });
   }, [employees, query, department, location]);
+  const selected = employees.find((employee) => employee.id === selectedId) ?? null;
 
   const resetFilters = () => { setQuery(""); setDepartment("All departments"); setLocation("All locations"); };
-  const root = employees.find((employee) => employee.managerId === null);
+  const roots = employees.filter((employee) => employee.managerId === null || !employees.some((candidate) => candidate.id === employee.managerId));
+
+  useEffect(() => {
+    if (!selected || !dialogRef.current) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+    focusable()[0]?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSelectedId(null);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = focusable();
+      if (controls.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [selected]);
 
   if (loading) {
     return <section className="min-h-[20rem] bg-[#0A0A0A] px-6 py-20 text-center text-[#9CA3AF]" role="status" aria-live="polite"><div className="mx-auto h-10 w-10 animate-pulse rounded-full border-2 border-[#D4AF37]" /><p className="mt-4">Loading employee directory…</p></section>;
@@ -155,7 +194,7 @@ export function EmployeeDirectory({ employees = DEFAULT_EMPLOYEES, loading = fal
               {(query || department !== "All departments" || location !== "All locations") && <button type="button" onClick={resetFilters} className="text-[#E8C547] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[#D4AF37]">Clear filters</button>}
             </div>
             {filteredEmployees.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{filteredEmployees.map((employee) => <ProfileCard key={employee.id} employee={employee} onSelect={setSelected} />)}</div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{filteredEmployees.map((employee) => <ProfileCard key={employee.id} employee={employee} onSelect={(profile) => setSelectedId(profile.id)} />)}</div>
             ) : (
               <div className="rounded-2xl border border-dashed border-[#2A2A2A] py-16 text-center"><h2 className="font-semibold">No teammates found</h2><p className="mt-2 text-sm text-[#9CA3AF]">Try a broader search or clear the current filters.</p><button type="button" onClick={resetFilters} className="mt-5 rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-semibold text-[#0A0A0A] focus:outline-none focus:ring-2 focus:ring-[#E8C547]">Reset directory</button></div>
             )}
@@ -163,14 +202,14 @@ export function EmployeeDirectory({ employees = DEFAULT_EMPLOYEES, loading = fal
         ) : (
           <div className="mt-8 overflow-x-auto rounded-2xl border border-[#2A2A2A] bg-[#0A0A0A] p-5 sm:p-8">
             <p className="mb-6 text-sm text-[#9CA3AF]">Select any person to open their profile. Horizontal scrolling keeps the reporting tree readable on small screens.</p>
-            {root && <ul className="min-w-[42rem]"><OrgNode employee={root} allEmployees={employees} onSelect={setSelected} /></ul>}
+            {roots.length > 0 && <ul className="grid min-w-[42rem] gap-6 xl:grid-cols-2">{roots.map((root) => <OrgNode key={root.id} employee={root} allEmployees={employees} onSelect={(profile) => setSelectedId(profile.id)} />)}</ul>}
           </div>
         )}
 
         {selected && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="profile-name" onMouseDown={(event) => { if (event.currentTarget === event.target) setSelected(null); }}>
+          <div ref={dialogRef} className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="profile-name" onMouseDown={(event) => { if (event.currentTarget === event.target) setSelectedId(null); }}>
             <article className="w-full max-w-lg rounded-2xl border border-[#2A2A2A] bg-[#0D0D0D] p-6 shadow-2xl">
-              <div className="flex items-start justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-[#D4AF37]">Team profile</p><h2 id="profile-name" className="mt-2 text-2xl font-bold">{selected.name}</h2><p className="mt-1 text-[#9CA3AF]">{selected.title} · {selected.pronouns}</p></div><button type="button" onClick={() => setSelected(null)} aria-label="Close profile" className="rounded-lg border border-[#2A2A2A] px-3 py-2 text-[#9CA3AF] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#D4AF37]">✕</button></div>
+              <div className="flex items-start justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-[#D4AF37]">Team profile</p><h2 id="profile-name" className="mt-2 text-2xl font-bold">{selected.name}</h2><p className="mt-1 text-[#9CA3AF]">{selected.title} · {selected.pronouns}</p></div><button type="button" onClick={() => setSelectedId(null)} aria-label="Close profile" className="rounded-lg border border-[#2A2A2A] px-3 py-2 text-[#9CA3AF] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#D4AF37]">✕</button></div>
               <dl className="mt-6 grid grid-cols-2 gap-5 border-y border-[#2A2A2A] py-5 text-sm"><div><dt className="text-[#6B7280]">Department</dt><dd className="mt-1">{selected.department}</dd></div><div><dt className="text-[#6B7280]">Location</dt><dd className="mt-1">{selected.location}</dd></div><div><dt className="text-[#6B7280]">Status</dt><dd className="mt-1">{selected.status}</dd></div><div><dt className="text-[#6B7280]">Reports to</dt><dd className="mt-1">{employees.find((employee) => employee.id === selected.managerId)?.name ?? "Board"}</dd></div></dl>
               <div className="mt-5"><h3 className="text-xs font-medium uppercase tracking-wider text-[#6B7280]">Expertise</h3><div className="mt-2 flex flex-wrap gap-2">{selected.skills.map((skill) => <span key={skill} className="rounded-full bg-[#D4AF37]/10 px-3 py-1 text-xs text-[#E8C547]">{skill}</span>)}</div></div>
               <div className="mt-6 grid gap-3 sm:grid-cols-2"><a href={`mailto:${selected.email}`} className="rounded-lg bg-[#D4AF37] px-4 py-2.5 text-center text-sm font-semibold text-[#0A0A0A] hover:bg-[#E8C547] focus:outline-none focus:ring-2 focus:ring-[#E8C547]">Send email</a><a href={`tel:${selected.phone.replace(/\s/g, "")}`} className="rounded-lg border border-[#D4AF37]/50 px-4 py-2.5 text-center text-sm text-[#E8C547] hover:bg-[#D4AF37]/10 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]">Call {selected.phone}</a></div>
