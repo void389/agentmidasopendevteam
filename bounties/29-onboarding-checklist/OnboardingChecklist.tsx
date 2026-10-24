@@ -38,15 +38,21 @@ interface OnboardingChecklistProps {
 const phases: OnboardingPhase[] = ["Before day one", "First day", "First week", "First month"];
 const categories: OnboardingCategory[] = ["People", "Equipment", "Access", "Training", "Culture"];
 
+function addDays(value: string, days: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+}
+
 const makeSteps = (prefix: string, startDate: string): OnboardingStep[] => [
-  { id: `${prefix}-1`, title: "Send welcome note", description: "Share the first-week schedule and arrival details.", phase: "Before day one", category: "People", owner: "People Ops", dueDate: startDate, required: true, completed: true },
-  { id: `${prefix}-2`, title: "Prepare laptop and security key", description: "Enroll the device and confirm the asset handoff.", phase: "Before day one", category: "Equipment", owner: "IT", dueDate: startDate, required: true, completed: true },
+  { id: `${prefix}-1`, title: "Send welcome note", description: "Share the first-week schedule and arrival details.", phase: "Before day one", category: "People", owner: "People Ops", dueDate: addDays(startDate, -5), required: true, completed: true },
+  { id: `${prefix}-2`, title: "Prepare laptop and security key", description: "Enroll the device and confirm the asset handoff.", phase: "Before day one", category: "Equipment", owner: "IT", dueDate: addDays(startDate, -2), required: true, completed: true },
   { id: `${prefix}-3`, title: "Activate core accounts", description: "Create email, chat, password manager, and project access.", phase: "First day", category: "Access", owner: "IT", dueDate: startDate, required: true, completed: false },
   { id: `${prefix}-4`, title: "Manager kickoff", description: "Review the role, success measures, and the 30-day plan.", phase: "First day", category: "People", owner: "Manager", dueDate: startDate, required: true, completed: false },
-  { id: `${prefix}-5`, title: "Meet the team", description: "Join introductions with the immediate team and key partners.", phase: "First week", category: "People", owner: "Manager", dueDate: "2026-10-30", required: false, completed: false },
-  { id: `${prefix}-6`, title: "Complete security training", description: "Finish privacy, phishing, and incident-reporting modules.", phase: "First week", category: "Training", owner: "Security", dueDate: "2026-10-31", required: true, completed: false },
-  { id: `${prefix}-7`, title: "Choose a culture buddy", description: "Pair with a teammate for informal questions and context.", phase: "First week", category: "Culture", owner: "People Ops", dueDate: "2026-11-01", required: false, completed: false },
-  { id: `${prefix}-8`, title: "30-day reflection", description: "Capture wins, open questions, and support needed next.", phase: "First month", category: "Culture", owner: "Manager", dueDate: "2026-11-24", required: true, completed: false },
+  { id: `${prefix}-5`, title: "Meet the team", description: "Join introductions with the immediate team and key partners.", phase: "First week", category: "People", owner: "Manager", dueDate: addDays(startDate, 2), required: false, completed: false },
+  { id: `${prefix}-6`, title: "Complete security training", description: "Finish privacy, phishing, and incident-reporting modules.", phase: "First week", category: "Training", owner: "Security", dueDate: addDays(startDate, 4), required: true, completed: false },
+  { id: `${prefix}-7`, title: "Choose a culture buddy", description: "Pair with a teammate for informal questions and context.", phase: "First week", category: "Culture", owner: "People Ops", dueDate: addDays(startDate, 6), required: false, completed: false },
+  { id: `${prefix}-8`, title: "30-day reflection", description: "Capture wins, open questions, and support needed next.", phase: "First month", category: "Culture", owner: "Manager", dueDate: addDays(startDate, 30), required: true, completed: false },
 ];
 
 export const sampleHires: NewHire[] = [
@@ -67,7 +73,8 @@ function Icon({ name }: { name: "check" | "search" | "calendar" | "user" | "plus
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "No due date" : new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
 function completion(steps: OnboardingStep[]) {
@@ -133,7 +140,7 @@ export function OnboardingChecklist({
       phase: data.get("phase") as OnboardingPhase,
       category: data.get("category") as OnboardingCategory,
       owner: String(data.get("owner") ?? "Manager").trim() || "Manager",
-      dueDate: String(data.get("dueDate") ?? selected.startDate),
+      dueDate: String(data.get("dueDate") ?? "").trim() || selected.startDate,
       required: data.get("required") === "on",
       completed: false,
     };
