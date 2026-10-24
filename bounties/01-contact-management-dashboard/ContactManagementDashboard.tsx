@@ -52,7 +52,13 @@ function initials(name: string) {
 }
 
 function sameContact(left: Contact, right: Contact) {
-  return left.id === right.id && left.name === right.name && left.title === right.title && left.company === right.company && left.email === right.email && left.phone === right.phone && left.status === right.status && left.tags.join("|") === right.tags.join("|") && left.lastContacted === right.lastContacted && left.notes === right.notes;
+  const sameTags = left.tags.length === right.tags.length && left.tags.every((value, index) => value === right.tags[index]);
+  return left.id === right.id && left.name === right.name && left.title === right.title && left.company === right.company && left.email === right.email && left.phone === right.phone && left.status === right.status && sameTags && left.lastContacted === right.lastContacted && left.notes === right.notes;
+}
+
+interface PendingContactChange {
+  contact: Contact;
+  remainingStaleSyncs: number;
 }
 
 export function ContactManagementDashboard({
@@ -74,15 +80,17 @@ export function ContactManagementDashboard({
   const [operationError, setOperationError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const pendingChangesRef = useRef(new Map<string, Contact>());
+  const pendingChangesRef = useRef(new Map<string, PendingContactChange>());
 
   useEffect(() => {
     const incoming = new Map(contacts.map((contact) => [contact.id, contact]));
     for (const [id, pending] of pendingChangesRef.current) {
       const confirmed = incoming.get(id);
-      if (confirmed && sameContact(confirmed, pending)) pendingChangesRef.current.delete(id);
+      if ((confirmed && sameContact(confirmed, pending.contact)) || pending.remainingStaleSyncs === 0) pendingChangesRef.current.delete(id);
+      else pending.remainingStaleSyncs -= 1;
     }
-    const merged = [...incoming.values()].map((contact) => pendingChangesRef.current.get(contact.id) ?? contact).concat([...pendingChangesRef.current.values()].filter((contact) => !incoming.has(contact.id)));
+    const pendingContacts = [...pendingChangesRef.current.values()].map(({ contact }) => contact);
+    const merged = [...incoming.values()].map((contact) => pendingChangesRef.current.get(contact.id)?.contact ?? contact).concat(pendingContacts.filter((contact) => !incoming.has(contact.id)));
     setLocalContacts(merged);
     setSelectedId((current) => merged.some((contact) => contact.id === current) ? current : merged[0]?.id ?? "");
   }, [contacts]);
@@ -125,18 +133,26 @@ export function ContactManagementDashboard({
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const name = String(data.get("name") ?? "").trim();
+    const title = String(data.get("title") ?? "").trim();
+    const companyName = String(data.get("company") ?? "").trim();
+    const email = String(data.get("email") ?? "").trim();
+    const phone = String(data.get("phone") ?? "").trim();
+    if (!name || !title || !companyName || !email || !phone) {
+      setOperationError("Name, job title, company, email, and phone are required.");
+      return;
+    }
     const current = editing === "new" ? null : editing;
     const next: Contact = {
       id: current?.id ?? `contact-${Date.now()}`,
       name,
       initials: initials(name),
-      title: String(data.get("title") ?? "").trim(),
-      company: String(data.get("company") ?? "").trim(),
-      email: String(data.get("email") ?? "").trim(),
-      phone: String(data.get("phone") ?? "").trim(),
+      title,
+      company: companyName,
+      email,
+      phone,
       status: data.get("status") as ContactStatus,
       tags: String(data.get("tags") ?? "").split(",").map((value) => value.trim()).filter(Boolean),
-      lastContacted: current?.lastContacted ?? "2026-10-24",
+      lastContacted: current?.lastContacted ?? "",
       notes: String(data.get("notes") ?? "").trim(),
     };
     setIsSaving(true);
@@ -144,11 +160,11 @@ export function ContactManagementDashboard({
     try {
       if (current) {
         await onUpdate?.(next);
-        pendingChangesRef.current.set(next.id, next);
+        pendingChangesRef.current.set(next.id, { contact: next, remainingStaleSyncs: 1 });
         setLocalContacts((values) => values.map((contact) => contact.id === next.id ? next : contact));
       } else {
         await onCreate?.(next);
-        pendingChangesRef.current.set(next.id, next);
+        pendingChangesRef.current.set(next.id, { contact: next, remainingStaleSyncs: 1 });
         setLocalContacts((values) => [next, ...values]);
         setSelectedId(next.id);
       }
@@ -165,7 +181,7 @@ export function ContactManagementDashboard({
     setOperationError(null);
     try {
       await onArchive?.(next);
-      pendingChangesRef.current.set(next.id, next);
+      pendingChangesRef.current.set(next.id, { contact: next, remainingStaleSyncs: 1 });
       setLocalContacts((values) => values.map((value) => value.id === next.id ? next : value));
     } catch {
       setOperationError("The contact could not be archived. Please try again.");
