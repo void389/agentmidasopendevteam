@@ -81,6 +81,7 @@ export function ContactManagementDashboard({
   const dialogRef = useRef<HTMLFormElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const pendingChangesRef = useRef(new Map<string, PendingContactChange>());
+  const mutatingContactIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     const incoming = new Map(contacts.map((contact) => [contact.id, contact]));
@@ -155,6 +156,11 @@ export function ContactManagementDashboard({
       lastContacted: current?.lastContacted ?? "",
       notes: String(data.get("notes") ?? "").trim(),
     };
+    if (current && mutatingContactIdsRef.current.has(current.id)) {
+      setOperationError("Another change to this contact is still being saved.");
+      return;
+    }
+    mutatingContactIdsRef.current.add(next.id);
     setIsSaving(true);
     setOperationError(null);
     try {
@@ -172,12 +178,18 @@ export function ContactManagementDashboard({
     } catch {
       setOperationError("The contact could not be saved. Check the connection and try again.");
     } finally {
+      mutatingContactIdsRef.current.delete(next.id);
       setIsSaving(false);
     }
   };
 
   const archiveContact = async (contact: Contact) => {
+    if (mutatingContactIdsRef.current.has(contact.id)) {
+      setOperationError("Another change to this contact is still being saved.");
+      return;
+    }
     const next = { ...contact, status: "Archived" as const };
+    mutatingContactIdsRef.current.add(contact.id);
     setOperationError(null);
     try {
       await onArchive?.(next);
@@ -185,6 +197,8 @@ export function ContactManagementDashboard({
       setLocalContacts((values) => values.map((value) => value.id === next.id ? next : value));
     } catch {
       setOperationError("The contact could not be archived. Please try again.");
+    } finally {
+      mutatingContactIdsRef.current.delete(contact.id);
     }
   };
 
