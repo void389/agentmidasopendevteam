@@ -81,6 +81,7 @@ export function ContentCalendar({
   onItemChange,
   onItemCreate,
 }: ContentCalendarProps) {
+  const currentMonth = isoDate(new Date()).slice(0, 7);
   const [localItems, setLocalItems] = useState(items);
   const [month, setMonth] = useState(initialMonth);
   const [query, setQuery] = useState("");
@@ -213,7 +214,7 @@ export function ContentCalendar({
 
       {operationError && <div className="mb-4 flex items-center justify-between rounded-xl border border-red-900/70 bg-red-950/20 px-4 py-3 text-sm text-red-200" role="alert"><span>{operationError}</span><button type="button" onClick={() => setOperationError(null)} aria-label="Dismiss error" className="rounded p-1 hover:bg-red-900/30">✕</button></div>}
       <div className="overflow-hidden rounded-2xl border border-[#292929] bg-[#0D0D0D]">
-        <div className="flex items-center justify-between border-b border-[#292929] p-4"><button type="button" onClick={() => setMonth((value) => shiftMonth(value, -1))} aria-label="Previous month" className="grid h-10 w-10 place-items-center rounded-lg border border-[#343434] hover:bg-[#1B1B1B]">←</button><div className="text-center"><h2 className="text-xl font-bold">{monthLabel(month)}</h2><button type="button" onClick={() => setMonth(initialMonth)} className="mt-1 text-xs text-[#D4AF37]">Return to current month</button></div><button type="button" onClick={() => setMonth((value) => shiftMonth(value, 1))} aria-label="Next month" className="grid h-10 w-10 place-items-center rounded-lg border border-[#343434] hover:bg-[#1B1B1B]">→</button></div>
+        <div className="flex items-center justify-between border-b border-[#292929] p-4"><button type="button" onClick={() => setMonth((value) => shiftMonth(value, -1))} aria-label="Previous month" className="grid h-10 w-10 place-items-center rounded-lg border border-[#343434] hover:bg-[#1B1B1B]">←</button><div className="text-center"><h2 className="text-xl font-bold">{monthLabel(month)}</h2><button type="button" onClick={() => setMonth(currentMonth)} className="mt-1 text-xs text-[#D4AF37]">Return to current month</button></div><button type="button" onClick={() => setMonth((value) => shiftMonth(value, 1))} aria-label="Next month" className="grid h-10 w-10 place-items-center rounded-lg border border-[#343434] hover:bg-[#1B1B1B]">→</button></div>
         <div className="grid grid-cols-7 border-b border-[#292929] bg-[#111]">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <div key={day} className="px-2 py-3 text-center font-mono text-[10px] uppercase tracking-wider text-[#777] sm:text-xs">{day}</div>)}</div>
         <div className="grid grid-cols-7">{days.map((date) => {
           const dayItems = filtered.filter((item) => item.date === date);
