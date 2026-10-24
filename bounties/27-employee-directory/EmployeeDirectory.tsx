@@ -202,7 +202,11 @@ export function EmployeeDirectory({ employees = DEFAULT_EMPLOYEES, loading = fal
         ) : (
           <div className="mt-8 overflow-x-auto rounded-2xl border border-[#2A2A2A] bg-[#0A0A0A] p-5 sm:p-8">
             <p className="mb-6 text-sm text-[#9CA3AF]">Select any person to open their profile. Horizontal scrolling keeps the reporting tree readable on small screens.</p>
-            {roots.length > 0 && <ul className="grid min-w-[42rem] gap-6 xl:grid-cols-2">{roots.map((root) => <OrgNode key={root.id} employee={root} allEmployees={employees} onSelect={(profile) => setSelectedId(profile.id)} />)}</ul>}
+            {roots.length > 0 ? (
+              <ul className="grid min-w-[42rem] gap-6 xl:grid-cols-2">{roots.map((root) => <OrgNode key={root.id} employee={root} allEmployees={employees} onSelect={(profile) => setSelectedId(profile.id)} />)}</ul>
+            ) : (
+              <div className="rounded-xl border border-dashed border-[#2A2A2A] px-6 py-12 text-center" role="status"><h2 className="font-semibold text-[#F5F5F5]">No organization data available</h2><p className="mt-2 text-sm text-[#9CA3AF]">Employee reporting relationships will appear here when the directory is populated.</p></div>
+            )}
           </div>
         )}
 
