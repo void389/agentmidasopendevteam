@@ -18,8 +18,8 @@ interface ContentCalendarProps {
   isLoading?: boolean;
   error?: string | null;
   initialMonth?: string;
-  onItemChange?: (item: ContentItem) => void;
-  onItemCreate?: (item: ContentItem) => void;
+  onItemChange?: (item: ContentItem) => void | Promise<void>;
+  onItemCreate?: (item: ContentItem) => void | Promise<void>;
 }
 
 const channels: ContentChannel[] = ["Blog", "Email", "LinkedIn", "Instagram", "YouTube"];
@@ -89,6 +89,9 @@ export function ContentCalendar({
   const [status, setStatus] = useState("all");
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [creatingOn, setCreatingOn] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -110,17 +113,22 @@ export function ContentCalendar({
       (status === "all" || item.status === status));
   }, [localItems, query, channel, assignee, status]);
 
-  const moveItem = (id: string, date: string) => {
+  const moveItem = async (id: string, date: string) => {
     const current = localItems.find((item) => item.id === id);
     if (!current || current.date === date) return;
     const next = { ...current, date };
-    setLocalItems((values) => values.map((item) => item.id === id ? next : item));
-    onItemChange?.(next);
+    setOperationError(null);
+    try {
+      await onItemChange?.(next);
+      setLocalItems((values) => values.map((item) => item.id === id ? next : item));
+    } catch {
+      setOperationError(`Could not move “${current.title}”. Try again.`);
+    }
   };
 
   const dropOn = (event: DragEvent<HTMLDivElement>, date: string) => {
     event.preventDefault();
-    moveItem(event.dataTransfer.getData("text/content-id"), date);
+    void moveItem(event.dataTransfer.getData("text/content-id"), date);
   };
 
   const closeDialog = () => {
@@ -149,7 +157,7 @@ export function ContentCalendar({
     }
   };
 
-  const saveItem = (event: FormEvent<HTMLFormElement>) => {
+  const saveItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const title = String(data.get("title") ?? "").trim();
@@ -164,14 +172,22 @@ export function ContentCalendar({
       assignee: String(data.get("assignee") ?? team[0]),
       campaign: String(data.get("campaign") ?? "").trim() || undefined,
     };
-    if (editing) {
-      setLocalItems((values) => values.map((item) => item.id === next.id ? next : item));
-      onItemChange?.(next);
-    } else {
-      setLocalItems((values) => [...values, next]);
-      onItemCreate?.(next);
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      if (editing) {
+        await onItemChange?.(next);
+        setLocalItems((values) => values.map((item) => item.id === next.id ? next : item));
+      } else {
+        await onItemCreate?.(next);
+        setLocalItems((values) => [...values, next]);
+      }
+      closeDialog();
+    } catch {
+      setSaveError("This item could not be saved. Check the connection and try again.");
+    } finally {
+      setIsSaving(false);
     }
-    closeDialog();
   };
 
   if (isLoading) return <section className="min-h-[560px] rounded-2xl border border-[#282828] bg-[#0D0D0D] p-6" role="status" aria-live="polite"><div className="h-10 w-72 animate-pulse rounded bg-[#202020]" /><div className="mt-7 grid grid-cols-7 gap-1">{Array.from({ length: 35 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded bg-[#171717]" />)}</div><span className="sr-only">Loading content calendar</span></section>;
@@ -195,6 +211,7 @@ export function ContentCalendar({
         <label className="text-xs text-[#9CA3AF]">Status<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white"><option value="all">All statuses</option>{statuses.map((value) => <option key={value}>{value}</option>)}</select></label>
       </div>
 
+      {operationError && <div className="mb-4 flex items-center justify-between rounded-xl border border-red-900/70 bg-red-950/20 px-4 py-3 text-sm text-red-200" role="alert"><span>{operationError}</span><button type="button" onClick={() => setOperationError(null)} aria-label="Dismiss error" className="rounded p-1 hover:bg-red-900/30">✕</button></div>}
       <div className="overflow-hidden rounded-2xl border border-[#292929] bg-[#0D0D0D]">
         <div className="flex items-center justify-between border-b border-[#292929] p-4"><button type="button" onClick={() => setMonth((value) => shiftMonth(value, -1))} aria-label="Previous month" className="grid h-10 w-10 place-items-center rounded-lg border border-[#343434] hover:bg-[#1B1B1B]">←</button><div className="text-center"><h2 className="text-xl font-bold">{monthLabel(month)}</h2><button type="button" onClick={() => setMonth(initialMonth)} className="mt-1 text-xs text-[#D4AF37]">Return to current month</button></div><button type="button" onClick={() => setMonth((value) => shiftMonth(value, 1))} aria-label="Next month" className="grid h-10 w-10 place-items-center rounded-lg border border-[#343434] hover:bg-[#1B1B1B]">→</button></div>
         <div className="grid grid-cols-7 border-b border-[#292929] bg-[#111]">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <div key={day} className="px-2 py-3 text-center font-mono text-[10px] uppercase tracking-wider text-[#777] sm:text-xs">{day}</div>)}</div>
@@ -212,12 +229,13 @@ export function ContentCalendar({
       {localItems.length > 0 && filtered.length === 0 && hasActiveFilters && <div className="mt-5 rounded-2xl border border-dashed border-[#3A3A3A] p-8 text-center" role="status"><p className="font-semibold">No content matches these filters</p><button type="button" onClick={() => { setQuery(""); setChannel("all"); setAssignee("all"); setStatus("all"); }} className="mt-3 text-sm text-[#D4AF37]">Clear filters</button></div>}
     </div>
 
-    {(editing || creatingOn) && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) closeDialog(); }}><form ref={dialogRef} onSubmit={saveItem} onKeyDown={handleDialogKeyDown} role="dialog" aria-modal="true" aria-labelledby="content-dialog-title" className="w-full max-w-lg rounded-2xl border border-[#343434] bg-[#111] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-[#D4AF37]">Editorial item</p><h2 id="content-dialog-title" className="mt-1 text-xl font-bold">{editing ? "Edit content" : "Plan content"}</h2></div><button type="button" onClick={closeDialog} aria-label="Close dialog" className="rounded p-2 text-[#888] hover:bg-[#222] hover:text-white">✕</button></div><div className="mt-5 space-y-4">
+    {(editing || creatingOn) && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && !isSaving) closeDialog(); }}><form ref={dialogRef} onSubmit={saveItem} onKeyDown={handleDialogKeyDown} role="dialog" aria-modal="true" aria-labelledby="content-dialog-title" className="w-full max-w-lg rounded-2xl border border-[#343434] bg-[#111] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-[#D4AF37]">Editorial item</p><h2 id="content-dialog-title" className="mt-1 text-xl font-bold">{editing ? "Edit content" : "Plan content"}</h2></div><button type="button" onClick={closeDialog} disabled={isSaving} aria-label="Close dialog" className="rounded p-2 text-[#888] hover:bg-[#222] hover:text-white disabled:opacity-50">✕</button></div><div className="mt-5 space-y-4">
       <label className="block text-xs text-[#9CA3AF]">Title<input name="title" required defaultValue={editing?.title ?? ""} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white outline-none focus:border-[#D4AF37]" /></label>
       <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs text-[#9CA3AF]">Publish date<input name="date" type="date" required defaultValue={editing?.date ?? creatingOn ?? `${month}-01`} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white" /></label><label className="text-xs text-[#9CA3AF]">Channel<select name="channel" defaultValue={editing?.channel ?? "Blog"} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{channels.map((value) => <option key={value}>{value}</option>)}</select></label></div>
-      <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs text-[#9CA3AF]">Owner<select name="assignee" defaultValue={editing?.assignee ?? team[0]} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{team.map((value) => <option key={value}>{value}</option>)}</select></label><label className="text-xs text-[#9CA3AF]">Status<select name="status" defaultValue={editing?.status ?? "Idea"} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{statuses.map((value) => <option key={value}>{value}</option>)}</select></label></div>
+      <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs text-[#9CA3AF]">Owner<select name="assignee" defaultValue={editing?.assignee ?? team[0]} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{(editing && !team.includes(editing.assignee) ? [editing.assignee, ...team] : team).map((value) => <option key={value}>{value}</option>)}</select></label><label className="text-xs text-[#9CA3AF]">Status<select name="status" defaultValue={editing?.status ?? "Idea"} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white">{statuses.map((value) => <option key={value}>{value}</option>)}</select></label></div>
       <label className="block text-xs text-[#9CA3AF]">Campaign (optional)<input name="campaign" defaultValue={editing?.campaign ?? ""} className="mt-2 min-h-11 w-full rounded-lg border border-[#343434] bg-[#090909] px-3 text-sm text-white" /></label>
-    </div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={closeDialog} className="rounded-lg border border-[#343434] px-4 py-2 text-sm hover:bg-[#222]">Cancel</button><button type="submit" className="rounded-lg bg-[#D4AF37] px-5 py-2 text-sm font-bold text-black hover:bg-[#E8C547]">Save item</button></div></form></div>}
+      {saveError && <p className="rounded-lg border border-red-900/70 bg-red-950/20 p-3 text-sm text-red-200" role="alert">{saveError}</p>}
+    </div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={closeDialog} disabled={isSaving} className="rounded-lg border border-[#343434] px-4 py-2 text-sm hover:bg-[#222] disabled:opacity-50">Cancel</button><button type="submit" disabled={isSaving} className="rounded-lg bg-[#D4AF37] px-5 py-2 text-sm font-bold text-black hover:bg-[#E8C547] disabled:cursor-wait disabled:opacity-60">{isSaving ? "Saving…" : "Save item"}</button></div></form></div>}
   </section>;
 }
 
